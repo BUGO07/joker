@@ -1,4 +1,4 @@
-pub struct Card(String);
+pub struct Card(pub String);
 
 impl Card {
     pub fn value(&self) -> usize {
