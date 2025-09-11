@@ -16,6 +16,7 @@ fn main() {
     App::new()
         .init_resource::<CardAssets>()
         .init_resource::<Players>()
+        .init_resource::<CardsPlaced>()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Joker Game".to_string(),
@@ -38,6 +39,9 @@ pub struct CardAssets(HashMap<String, Handle<Image>>);
 
 #[derive(Resource, Default)]
 pub struct Players(VecDeque<(String, Vec<Card>)>);
+
+#[derive(Resource, Default, Debug)]
+pub struct CardsPlaced(VecDeque<Card>);
 
 #[derive(Component)]
 pub struct PlayerNode;
@@ -167,29 +171,46 @@ fn start_game(
                     } else {
                         covered_card.clone()
                     }),
-                    Transform::from_translation(if i % 2 == 0 {
-                        vec3(
-                            (j as f32 - (9.0 - 1.0) / 2.0) * CSW,
-                            (-window.height() + CSH + 25.0) / 2.0,
-                            0.0,
-                        )
-                    } else {
-                        vec3(
-                            (j as f32 - (9.0 - 1.0) / 2.0) * CSW,
-                            (-window.width() + CSW + 25.0) / 2.0,
-                            0.0,
-                        )
-                    })
+                    Transform::from_xyz(
+                        (j as f32 - (9.0 - 1.0) / 2.0) * CSW,
+                        if i % 2 == 0 {
+                            (-window.height() + CSH + 25.0) / 2.0
+                        } else {
+                            (-window.width() + CSW + 25.0) / 2.0
+                        },
+                        0.0,
+                    )
                     .with_scale(Vec3::ONE * CARD_SCALE),
                     card.clone(),
                     ChildOf(player_node),
                 ))
                 .observe(
                     |trigger: Trigger<Pointer<Released>>,
-                     cards: Query<&Card>,
-                     players: Res<Players>| {
-                        let card = cards.get(trigger.target).unwrap();
-                        info!("card - {} | player - {}", card.0, players.0[card.1].0)
+                     mut cards: Query<(&mut Transform, &Card)>,
+                     mut commands: Commands,
+                     mut players: ResMut<Players>,
+                     mut cards_placed: ResMut<CardsPlaced>| {
+                        let (_, card) = cards.get(trigger.target).unwrap();
+                        // joker
+                        if let Some(first_card) = cards_placed.0.back() {
+                            let card_suit = card.suit();
+                            if card_suit != first_card.suit() && card_suit != 0 {
+                                return;
+                            }
+                        }
+                        let pcards = &mut players.0[card.1].1;
+                        cards_placed.0.push_front(
+                            pcards.remove(pcards.iter().position(|x| x == card).unwrap()),
+                        );
+                        commands.entity(trigger.target).despawn();
+                        for (mut transform, c) in cards.iter_mut() {
+                            // not my finest code
+                            if let Some(pos) = pcards.iter().position(|x| x == c) {
+                                transform.translation.x =
+                                    (pos as f32 - (pcards.len() as f32 - 1.0) / 2.0) * CSW
+                            }
+                        }
+                        info!("placed cards - {:?}", cards_placed)
                     },
                 );
         }

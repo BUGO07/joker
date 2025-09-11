@@ -9,6 +9,11 @@ opt-level = 3
 [profile.dev]
 opt-level = 1
 
+[profile.wasm-release]
+inherits = "release"
+opt-level = "s"
+strip = "debuginfo"
+
 [dependencies]
 bevy = { version = "0.16.1", features = ["dynamic_linking"] }
 random-number = "0.1.9"

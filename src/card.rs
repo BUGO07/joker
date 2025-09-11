@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-#[derive(Component, Clone)]
+#[derive(Component, Clone, PartialEq, Debug)]
 pub struct Card(pub String, pub usize); // card, player
 
 impl Card {
