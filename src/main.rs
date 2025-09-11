@@ -64,6 +64,9 @@ pub struct PlacedCardsNode;
 #[derive(Component)]
 pub struct PlacedCard;
 
+#[derive(Component)]
+pub struct ScoresText;
+
 const H_PENALTY: i32 = 200;
 
 const CARD_WIDTH: f32 = 290.0;
@@ -156,6 +159,7 @@ fn start_game(
     }
     let covered_card = asset_server.load("back/Red.png");
 
+    commands.spawn((Text::new("Scores:"), ScoresText));
     commands.spawn((Visibility::Visible, Transform::default(), PlacedCardsNode));
 
     for (i, player) in players.0.iter().enumerate() {
@@ -270,6 +274,7 @@ fn cleanup(
     mut cards_placed: ResMut<CardsPlaced>,
     player_nodes: Query<Entity, With<PlayerNode>>,
     placed_cards_node: Query<Entity, With<PlacedCardsNode>>,
+    scores_text: Single<Entity, With<ScoresText>>,
 ) {
     for node in player_nodes {
         commands.entity(node).despawn();
@@ -277,6 +282,7 @@ fn cleanup(
     for node in placed_cards_node {
         commands.entity(node).despawn();
     }
+    commands.entity(*scores_text).despawn();
 
     cards_placed.0.clear();
     // TODO - TEMP
@@ -287,6 +293,7 @@ fn award_scores(
     mut commands: Commands,
     mut cards_placed: ResMut<CardsPlaced>,
     mut players: ResMut<Players>,
+    mut scores_text: Single<&mut Text, With<ScoresText>>,
     query: Query<(Entity, &Card), With<PlacedCard>>,
     cards_in_hand: Query<(Entity, &Card), Without<PlacedCard>>,
 ) {
@@ -302,6 +309,7 @@ fn award_scores(
     }
     // round over
     if !players.0.is_empty() && cards_in_hand.is_empty() {
+        let mut text = String::new();
         for player in players.0.iter_mut() {
             if player.taken == player.called {
                 player.score += (1 + player.taken) * 50
@@ -310,7 +318,12 @@ fn award_scores(
             } else {
                 player.score -= H_PENALTY;
             }
+            text.push_str(&format!(
+                "{}, {}/{} | {}\n",
+                player.name, player.taken, player.called, player.score
+            ));
         }
+        scores_text.0 = text;
         // TODO - TEMP
         commands.run_system_cached(cleanup);
         commands.run_system_cached(start_game);
