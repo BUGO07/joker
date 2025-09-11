@@ -1,4 +1,7 @@
-pub struct Card(pub String);
+use bevy::prelude::*;
+
+#[derive(Component, Clone)]
+pub struct Card(pub String, pub usize); // card, player
 
 impl Card {
     pub fn value(&self) -> usize {
