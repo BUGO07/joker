@@ -1,6 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use bevy::{
+    input::common_conditions::input_just_pressed,
     prelude::*,
     window::{PrimaryWindow, WindowResized},
 };
@@ -20,7 +21,11 @@ fn main() {
             }),
             ..Default::default()
         }))
-        .add_systems(Startup, setup)
+        .add_systems(Startup, (load_assets, start_game).chain())
+        .add_systems(
+            Update,
+            start_game.run_if(input_just_pressed(KeyCode::Space)),
+        )
         .add_systems(Update, resize_event)
         .run();
 }
@@ -31,18 +36,19 @@ pub struct CardAssets(HashMap<String, Handle<Image>>);
 #[derive(Resource, Default)]
 pub struct Players(VecDeque<(String, Vec<Card>)>);
 
+#[derive(Component)]
+pub struct PlayerNode;
+
 const CARD_WIDTH: f32 = 290.0;
 const CARD_HEIGHT: f32 = 400.0;
 const CARD_SCALE: f32 = 1.0 / 5.0;
 const CSW: f32 = CARD_WIDTH * CARD_SCALE;
 const CSH: f32 = CARD_HEIGHT * CARD_SCALE;
 
-fn setup(
+fn load_assets(
     mut commands: Commands,
     mut assets: ResMut<CardAssets>,
-    mut players: ResMut<Players>,
     asset_server: Res<AssetServer>,
-    window: Single<&Window, With<PrimaryWindow>>,
 ) {
     commands.spawn(Camera2d);
 
@@ -67,7 +73,20 @@ fn setup(
             );
         }
     }
+}
 
+fn start_game(
+    mut commands: Commands,
+    mut players: ResMut<Players>,
+    assets: Res<CardAssets>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    asset_server: Res<AssetServer>,
+    player_nodes: Query<Entity, With<PlayerNode>>,
+) {
+    for node in player_nodes {
+        commands.entity(node).despawn();
+    }
+    players.0.clear();
     let mut deck = assets.0.keys().cloned().collect::<Vec<_>>();
 
     for name in ["lela", "ilia", "lizi", "giorgi"] {
@@ -79,6 +98,7 @@ fn setup(
             cards.push(Card(card, i));
         }
         cards.sort_by_key(|x| std::cmp::Reverse(x.value()));
+        cards.sort_by_key(|x| x.suit());
     }
 
     let current_player = "giorgi";
@@ -92,6 +112,7 @@ fn setup(
         let mut player_node = commands.spawn((
             Visibility::Visible,
             Transform::from_rotation(Quat::from_rotation_z(i as f32 * -90f32.to_radians())),
+            PlayerNode,
         ));
         player_node.with_child((
             Text2d::new(player),
