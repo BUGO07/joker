@@ -1,5 +1,17 @@
 # Got bored again and decided to make Joker (the card game)
 
+## Features
+- Card placing logic
+- Nines mode
+- Calling / Taking
+- H Penalties
+
+## TODO
+- Classic mode
+- Trumps
+- Nice UI / Animations
+- Networking
+
 ## Building and running
 ### Requirements
 - [`rust`](https://rustup.rs/) - obviously

@@ -15,8 +15,6 @@ pub mod card;
 fn main() {
     App::new()
         .init_resource::<CardAssets>()
-        .init_resource::<Players>()
-        .init_resource::<CardsPlaced>()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Joker Game".to_string(),
@@ -40,9 +38,6 @@ fn main() {
 #[derive(Resource, Default)]
 pub struct CardAssets(HashMap<String, Handle<Image>>);
 
-#[derive(Resource, Default)]
-pub struct Players(VecDeque<Player>);
-
 #[derive(Default, Debug)]
 pub struct Player {
     pub name: String,
@@ -52,8 +47,22 @@ pub struct Player {
     pub taken: i32,
 }
 
-#[derive(Resource, Default, Debug)]
-pub struct CardsPlaced(VecDeque<Card>);
+#[derive(Default)]
+pub enum GameType {
+    Classic,
+    #[default]
+    Nines,
+}
+
+#[derive(Resource, Default)]
+pub struct GameInfo {
+    _type: GameType,
+    players: VecDeque<Player>,
+    cards_placed: VecDeque<Card>,
+    last_cards_placed: VecDeque<Card>,
+    last_took: Option<String>, // player name
+    dealer: usize,
+}
 
 #[derive(Component)]
 pub struct PlayerNode;
@@ -129,27 +138,27 @@ fn load_assets(
 
 fn start_game(
     mut commands: Commands,
-    mut players: ResMut<Players>,
     assets: Res<CardAssets>,
     window: Single<&Window, With<PrimaryWindow>>,
     asset_server: Res<AssetServer>,
 ) {
     let mut deck = assets.0.keys().cloned().collect::<Vec<_>>();
+    let mut game_info = GameInfo::default();
 
     for name in ["lela", "ilia", "lizi", "giorgi"] {
-        players.0.push_back(Player {
+        game_info.players.push_back(Player {
             name: name.to_string(),
             ..Default::default()
         });
     }
 
     let current_player = "giorgi";
-    while players.0[0].name != current_player {
-        let player = players.0.pop_front().unwrap();
-        players.0.push_back(player)
+    while game_info.players[0].name != current_player {
+        let player = game_info.players.pop_front().unwrap();
+        game_info.players.push_back(player)
     }
 
-    for (i, player) in players.0.iter_mut().enumerate() {
+    for (i, player) in game_info.players.iter_mut().enumerate() {
         for _ in 0..9 {
             let card = deck.remove(random!(..deck.len()));
             player.cards.push(Card(card, i));
@@ -162,7 +171,7 @@ fn start_game(
     commands.spawn((Text::new("Scores:"), ScoresText));
     commands.spawn((Visibility::Visible, Transform::default(), PlacedCardsNode));
 
-    for (i, player) in players.0.iter().enumerate() {
+    for (i, player) in game_info.players.iter().enumerate() {
         let player_node = commands
             .spawn((
                 Visibility::Visible,
@@ -213,33 +222,49 @@ fn start_game(
                     |trigger: Trigger<Pointer<Released>>,
                      mut cards: Query<(&mut Transform, &Card)>,
                      mut commands: Commands,
-                     mut players: ResMut<Players>,
-                     mut cards_placed: ResMut<CardsPlaced>,
+                     mut game_info: ResMut<GameInfo>,
                      assets: Res<CardAssets>,
                      placed_cards_node: Single<Entity, With<PlacedCardsNode>>| {
                         let (_, card) = cards.get(trigger.target).unwrap();
 
-                        let pcards = &mut players.0[card.1].cards;
-                        if let Some(first_card) = cards_placed.0.back() {
+                        let GameInfo {
+                            players,
+                            cards_placed,
+                            _type: _,
+                            last_cards_placed: _,
+                            last_took,
+                            dealer,
+                        } = &mut *game_info;
+                        let player = &players[card.1];
+                        if let Some(first_card) = cards_placed.back() {
                             let card_suit = card.suit();
                             let first_suit = first_card.suit();
-                            if pcards.iter().any(|x| x.suit() == first_suit)
-                                && first_suit != 0
-                                && card_suit != 0
-                                && card_suit != first_suit
+                            if cards_placed.iter().any(|x| x.1 == card.1)
+                                || (player.cards.iter().any(|x| x.suit() == first_suit)
+                                    && first_suit != 0
+                                    && card_suit != 0
+                                    && card_suit != first_suit)
                             {
                                 return;
                             }
+                        } else if let Some(x) = last_took {
+                            if *x != player.name {
+                                return;
+                            }
+                        } else if player.name != players[*dealer + 1].name {
+                            return;
                         }
-                        cards_placed.0.push_front(
+
+                        let pcards = &mut players[card.1].cards;
+                        cards_placed.push_front(
                             pcards.remove(pcards.iter().position(|x| x == card).unwrap()),
                         );
                         commands.entity(trigger.target).despawn();
-                        let fc = cards_placed.0.back().unwrap();
+                        let fc = cards_placed.back().unwrap();
                         commands.spawn((
                             Sprite::from_image(assets.0[&card.0].clone()),
                             Transform::from_translation(
-                                match (cards_placed.0.len() - 1 + fc.1) % 4 {
+                                match (cards_placed.len() - 1 + fc.1) % 4 {
                                     0 => Vec3::NEG_Y,
                                     1 => Vec3::NEG_X,
                                     2 => Vec3::Y,
@@ -248,7 +273,7 @@ fn start_game(
                                 } * CSH,
                             )
                             .with_rotation(Quat::from_rotation_z(
-                                (cards_placed.0.len() - 1 + fc.1) as f32 * -90f32.to_radians(),
+                                (cards_placed.len() - 1 + fc.1) as f32 * -90f32.to_radians(),
                             ))
                             .with_scale(Vec3::ONE * CARD_SCALE),
                             card.clone(),
@@ -266,12 +291,12 @@ fn start_game(
                 );
         }
     }
+    commands.insert_resource(game_info);
 }
 
 fn cleanup(
     mut commands: Commands,
-    mut players: ResMut<Players>,
-    mut cards_placed: ResMut<CardsPlaced>,
+    mut game_info: ResMut<GameInfo>,
     player_nodes: Query<Entity, With<PlayerNode>>,
     placed_cards_node: Query<Entity, With<PlacedCardsNode>>,
     scores_text: Single<Entity, With<ScoresText>>,
@@ -284,33 +309,34 @@ fn cleanup(
     }
     commands.entity(*scores_text).despawn();
 
-    cards_placed.0.clear();
+    game_info.cards_placed.clear();
     // TODO - TEMP
-    players.0.clear();
+    game_info.players.clear();
 }
 
 fn award_scores(
     mut commands: Commands,
-    mut cards_placed: ResMut<CardsPlaced>,
-    mut players: ResMut<Players>,
+    mut game_info: ResMut<GameInfo>,
     mut scores_text: Single<&mut Text, With<ScoresText>>,
     query: Query<(Entity, &Card), With<PlacedCard>>,
     cards_in_hand: Query<(Entity, &Card), Without<PlacedCard>>,
 ) {
-    if cards_placed.0.len() == 4 {
+    if game_info.cards_placed.len() == 4 {
         let mut cards = query.iter().collect::<Vec<_>>();
         cards.sort_by_key(|(_, card)| std::cmp::Reverse(card.value()));
-        let player = &mut players.0[cards[0].1.1];
+        let player = &mut game_info.players[cards[0].1.1];
         player.taken += 1;
+        game_info.last_took = Some(player.name.clone());
+        game_info.last_cards_placed = game_info.cards_placed.clone();
         for (entity, _) in cards {
             commands.entity(entity).despawn();
         }
-        cards_placed.0.clear();
+        game_info.cards_placed.clear();
     }
     // round over
-    if !players.0.is_empty() && cards_in_hand.is_empty() {
+    if !game_info.players.is_empty() && cards_in_hand.is_empty() {
         let mut text = String::new();
-        for player in players.0.iter_mut() {
+        for player in game_info.players.iter_mut() {
             if player.taken == player.called {
                 player.score += (1 + player.taken) * 50
             } else if player.taken > 0 {
@@ -335,7 +361,7 @@ fn resize_event(
     mut cards: Query<(&mut Transform, &Card), (Without<Text2d>, Without<PlacedCard>)>,
     mut player_nametags: Query<(&mut Transform, &Text2d)>,
     mut resize_event: EventReader<WindowResized>,
-    players: Res<Players>,
+    game_info: Res<GameInfo>,
 ) {
     for event in resize_event.read() {
         for (mut transform, card) in cards.iter_mut() {
@@ -346,8 +372,8 @@ fn resize_event(
             };
         }
         for (mut transform, text) in player_nametags.iter_mut() {
-            let i = players
-                .0
+            let i = game_info
+                .players
                 .iter()
                 .enumerate()
                 .find(|(_, player)| player.name == text.0)
