@@ -1,36 +1,53 @@
 use bevy::prelude::*;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Suit {
+    Joker,
+    Spades,
+    Diamonds,
+    Clubs,
+    Hearts,
+}
+
 #[derive(Component, Clone, PartialEq, Debug)]
 pub struct Card(pub String, pub usize); // card, player
 
 impl Card {
-    pub fn suit(&self) -> usize {
+    pub fn suit(&self) -> Suit {
         if self.0.starts_with("Joker") {
-            return 0;
+            return Suit::Joker;
         }
 
         match &self.0[0..1] {
-            "S" => 1,
-            "D" => 2,
-            "C" => 3,
-            "H" => 4,
+            "S" => Suit::Spades,
+            "D" => Suit::Diamonds,
+            "C" => Suit::Clubs,
+            "H" => Suit::Hearts,
             _ => unreachable!(),
         }
     }
-    pub fn value(&self) -> usize {
+    pub fn value(&self, trump: Option<Suit>) -> usize {
         if self.0.starts_with("Joker") {
-            return 15;
+            return usize::MAX;
         }
-        if self.0.ends_with("10") {
-            return 10;
-        }
+        let value = if self.0.ends_with("10") {
+            10
+        } else {
+            match &self.0[1..2] {
+                "A" => 14,
+                "K" => 13,
+                "Q" => 12,
+                "J" => 11,
+                x => x.parse().unwrap(),
+            }
+        };
 
-        match &self.0[1..2] {
-            "A" => 14,
-            "K" => 13,
-            "Q" => 12,
-            "J" => 11,
-            x => x.parse().unwrap(),
+        if let Some(t) = trump
+            && self.suit() == t
+        {
+            value + 15
+        } else {
+            value
         }
     }
 }

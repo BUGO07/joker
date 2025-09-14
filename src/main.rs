@@ -8,7 +8,7 @@ use bevy::{
 use random_number::random;
 // use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
 
-use crate::card::Card;
+use crate::card::{Card, Suit};
 
 pub mod card;
 
@@ -62,6 +62,7 @@ pub struct GameInfo {
     last_cards_placed: VecDeque<Card>,
     last_took: Option<String>, // player name
     dealer: usize,
+    trump: Option<Suit>,
 }
 
 #[derive(Component)]
@@ -158,13 +159,17 @@ fn start_game(
         game_info.players.push_back(player)
     }
 
+    game_info.trump = Some(Card(deck[random!(..deck.len())].clone(), usize::MAX).suit());
+
     for (i, player) in game_info.players.iter_mut().enumerate() {
         for _ in 0..9 {
             let card = deck.remove(random!(..deck.len()));
             player.cards.push(Card(card, i));
         }
-        player.cards.sort_by_key(|x| std::cmp::Reverse(x.value()));
-        player.cards.sort_by_key(|x| x.suit());
+        player
+            .cards
+            .sort_by_key(|x| std::cmp::Reverse(x.value(game_info.trump)));
+        player.cards.sort_by_key(|x| x.suit() as u8);
     }
     let covered_card = asset_server.load("back/Red.png");
 
@@ -234,6 +239,7 @@ fn start_game(
                             last_cards_placed: _,
                             last_took,
                             dealer,
+                            trump: _,
                         } = &mut *game_info;
                         let player = &players[card.1];
                         if let Some(first_card) = cards_placed.back() {
@@ -241,14 +247,20 @@ fn start_game(
                             let first_suit = first_card.suit();
                             if cards_placed.iter().any(|x| x.1 == card.1)
                                 || (player.cards.iter().any(|x| x.suit() == first_suit)
-                                    && first_suit != 0
-                                    && card_suit != 0
+                                    && first_suit != Suit::Joker
+                                    && card_suit != Suit::Joker
                                     && card_suit != first_suit)
                             {
                                 return;
                             }
-                        } else if let Some(x) = last_took {
-                            if *x != player.name {
+                        } else if let Some(x) = last_took
+                            && *x != player.name
+                        {
+                            return;
+                        }
+
+                        if let Some(last_card) = cards_placed.front() {
+                            if player.name != players[(last_card.1 + 1) % 4].name {
                                 return;
                             }
                         } else if player.name != players[*dealer + 1].name {
@@ -323,7 +335,7 @@ fn award_scores(
 ) {
     if game_info.cards_placed.len() == 4 {
         let mut cards = query.iter().collect::<Vec<_>>();
-        cards.sort_by_key(|(_, card)| std::cmp::Reverse(card.value()));
+        cards.sort_by_key(|(_, card)| std::cmp::Reverse(card.value(game_info.trump)));
         let player = &mut game_info.players[cards[0].1.1];
         player.taken += 1;
         game_info.last_took = Some(player.name.clone());
@@ -354,6 +366,7 @@ fn award_scores(
         commands.run_system_cached(cleanup);
         commands.run_system_cached(start_game);
     }
+    scores_text.0 = format!("Trump: {:?}", game_info.trump.unwrap_or(Suit::Joker));
 }
 
 #[allow(clippy::type_complexity)]
