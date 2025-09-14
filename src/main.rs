@@ -85,42 +85,9 @@ const CARD_SCALE: f32 = 1.0 / 5.0;
 const CSW: f32 = CARD_WIDTH * CARD_SCALE;
 const CSH: f32 = CARD_HEIGHT * CARD_SCALE;
 const ASSETS: &[&str] = &[
-    "JokerRed",
-    "JokerBlack",
-    "S7",
-    "S8",
-    "S9",
-    "S10",
-    "SJ",
-    "SQ",
-    "SK",
-    "SA",
-    "D6",
-    "D7",
-    "D8",
-    "D9",
-    "D10",
-    "DJ",
-    "DQ",
-    "DK",
-    "DA",
-    "C7",
-    "C8",
-    "C9",
-    "C10",
-    "CJ",
-    "CQ",
-    "CK",
-    "CA",
-    "H6",
-    "H7",
-    "H8",
-    "H9",
-    "H10",
-    "HJ",
-    "HQ",
-    "HK",
-    "HA",
+    "JR", "JB", "S7", "S8", "S9", "S10", "SJ", "SQ", "SK", "SA", "D6", "D7", "D8", "D9", "D10",
+    "DJ", "DQ", "DK", "DA", "C7", "C8", "C9", "C10", "CJ", "CQ", "CK", "CA", "H6", "H7", "H8",
+    "H9", "H10", "HJ", "HQ", "HK", "HA",
 ];
 
 fn load_assets(
@@ -144,7 +111,10 @@ fn start_game(
     asset_server: Res<AssetServer>,
 ) {
     let mut deck = assets.0.keys().cloned().collect::<Vec<_>>();
-    let mut game_info = GameInfo::default();
+    let mut game_info = GameInfo {
+        dealer: 3,
+        ..Default::default()
+    };
 
     for name in ["lela", "ilia", "lizi", "giorgi"] {
         game_info.players.push_back(Player {
@@ -224,6 +194,22 @@ fn start_game(
                     ChildOf(player_node),
                 ))
                 .observe(
+                    |trigger: Trigger<Pointer<Over>>,
+                     mut cards: Query<&mut Transform, With<Card>>| {
+                        let mut card = cards.get_mut(trigger.target).unwrap();
+                        card.translation.y += CSW / 8.0;
+                        card.scale.y *= 1.2;
+                    },
+                )
+                .observe(
+                    |trigger: Trigger<Pointer<Out>>,
+                     mut cards: Query<&mut Transform, With<Card>>| {
+                        let mut card = cards.get_mut(trigger.target).unwrap();
+                        card.translation.y -= CSW / 8.0;
+                        card.scale.y /= 1.2;
+                    },
+                )
+                .observe(
                     |trigger: Trigger<Pointer<Released>>,
                      mut cards: Query<(&mut Transform, &Card)>,
                      mut commands: Commands,
@@ -242,6 +228,36 @@ fn start_game(
                             trump: _,
                         } = &mut *game_info;
                         let player = &players[card.1];
+
+                        // check that it's the player's turn to place
+                        /*
+                             if this is not the first card placed, check that the player index is last_player + 1
+                             if this is the first card placed:
+                                check that the player placing the card is the same one that took last cards
+                                check that the player index is dealer + 1
+                        */
+                        if let Some(last_card) = cards_placed.front() {
+                            if player.name != players[(last_card.1 + 1) % 4].name {
+                                return;
+                            }
+                        } else if let Some(x) = last_took {
+                            if *x != player.name {
+                                return;
+                            }
+                        } else if player.name != players[(*dealer + 1) % 4].name {
+                            return;
+                        }
+
+                        // check the first card and make sure:
+                        // player hasn't placed their card yet
+                        // either:
+                        /*
+                            the suit is the same as the card being placed
+                            the first card is a joker
+                            the player's card is a joker
+                        */
+                        // if the player doesn't have a same suit of card,
+                        // and they don't have a trump, they can place any card
                         if let Some(first_card) = cards_placed.back() {
                             let card_suit = card.suit();
                             let first_suit = first_card.suit();
@@ -253,18 +269,6 @@ fn start_game(
                             {
                                 return;
                             }
-                        } else if let Some(x) = last_took
-                            && *x != player.name
-                        {
-                            return;
-                        }
-
-                        if let Some(last_card) = cards_placed.front() {
-                            if player.name != players[(last_card.1 + 1) % 4].name {
-                                return;
-                            }
-                        } else if player.name != players[*dealer + 1].name {
-                            return;
                         }
 
                         let pcards = &mut players[card.1].cards;

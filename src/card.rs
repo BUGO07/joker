@@ -14,11 +14,8 @@ pub struct Card(pub String, pub usize); // card, player
 
 impl Card {
     pub fn suit(&self) -> Suit {
-        if self.0.starts_with("Joker") {
-            return Suit::Joker;
-        }
-
         match &self.0[0..1] {
+            "J" => Suit::Joker,
             "S" => Suit::Spades,
             "D" => Suit::Diamonds,
             "C" => Suit::Clubs,
@@ -26,10 +23,12 @@ impl Card {
             _ => unreachable!(),
         }
     }
+
     pub fn value(&self, trump: Option<Suit>) -> usize {
-        if self.0.starts_with("Joker") {
+        if self.0.starts_with("J") {
             return usize::MAX;
         }
+
         let value = if self.0.ends_with("10") {
             10
         } else {
