@@ -104,8 +104,6 @@ impl Card {
     }
 
     pub fn can_place(&self, game_info: &GameInfo) -> bool {
-        let player = &game_info.players[self.player];
-
         // check that it's the player's turn to place
         /*
              if this is not the first card placed, check that the player index is last_player + 1
@@ -114,14 +112,14 @@ impl Card {
                 check that the player index is dealer + 1
         */
         if let Some(last_card) = game_info.cards_placed.front() {
-            if player.name != game_info.players[(last_card.player + 1) % 4].name {
+            if self.player != (last_card.player + 1) % 4 {
                 return false;
             }
         } else if let Some(x) = &game_info.last_took {
-            if x != &player.name {
+            if x != &self.player {
                 return false;
             }
-        } else if player.name != game_info.players[(game_info.dealer + 1) % 4].name {
+        } else if self.player != (game_info.dealer + 1) % 4 {
             return false;
         }
 
@@ -147,7 +145,10 @@ impl Card {
                 return false;
             }
 
-            if player.cards.iter().any(|card| card.suit == first_suit)
+            if game_info.players[self.player]
+                .cards
+                .iter()
+                .any(|card| card.suit == first_suit)
                 && card_suit != first_suit
                 && !(matches!(first_suit, Suit::Joker(_)) || matches!(card_suit, Suit::Joker(_)))
             {

@@ -1,5 +1,3 @@
-use std::collections::{HashMap, VecDeque};
-
 use bevy::{
     input::common_conditions::input_just_pressed,
     prelude::*,
@@ -8,13 +6,16 @@ use bevy::{
 use random_number::random;
 // use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
 
-use crate::card::{Card, Suit};
+use crate::{card::*, components::*, consts::*};
 
-pub mod card;
+mod card;
+mod components;
+mod consts;
 
 fn main() {
     App::new()
         .init_resource::<CardAssets>()
+        .init_resource::<GameInfo>()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Joker Game".to_string(),
@@ -39,67 +40,6 @@ fn main() {
         .run();
 }
 
-#[derive(Resource, Default)]
-pub struct CardAssets {
-    primary: HashMap<String, Handle<Image>>,
-    extra: HashMap<String, Handle<Image>>,
-}
-
-#[derive(Default, Debug)]
-pub struct Player {
-    pub name: String,
-    pub cards: Vec<Card>,
-    pub score: i32,
-    pub called: i32,
-    pub taken: i32,
-}
-
-#[derive(Default)]
-pub enum GameType {
-    Classic,
-    #[default]
-    Nines,
-}
-
-#[derive(Resource, Default)]
-pub struct GameInfo {
-    _type: GameType,
-    players: VecDeque<Player>,
-    cards_placed: VecDeque<Card>,
-    last_cards_placed: VecDeque<Card>,
-    last_took: Option<String>, // player name
-    dealer: usize,
-    trump: Option<Suit>,
-}
-
-#[derive(Component)]
-pub struct PlayerNode;
-
-#[derive(Component)]
-pub struct PlacedCardsNode;
-
-#[derive(Component)]
-pub struct PlacedCard;
-
-#[derive(Component)]
-pub struct ScoresText;
-
-#[derive(Component)]
-pub struct PlayerTag(String);
-
-const H_PENALTY: i32 = 200;
-
-const CARD_WIDTH: f32 = 290.0;
-const CARD_HEIGHT: f32 = 400.0;
-const CARD_SCALE: f32 = 1.0 / 5.0;
-const CSW: f32 = CARD_WIDTH * CARD_SCALE;
-const CSH: f32 = CARD_HEIGHT * CARD_SCALE;
-const ASSETS: &[&str] = &[
-    "JR", "JB", "S7", "S8", "S9", "S1", "SJ", "SQ", "SK", "SA", "D6", "D7", "D8", "D9", "D1", "DJ",
-    "DQ", "DK", "DA", "C7", "C8", "C9", "C1", "CJ", "CQ", "CK", "CA", "H6", "H7", "H8", "H9", "H1",
-    "HJ", "HQ", "HK", "HA",
-];
-
 fn load_assets(
     mut commands: Commands,
     mut assets: ResMut<CardAssets>,
@@ -117,16 +57,9 @@ fn load_assets(
         .insert("back".to_string(), asset_server.load("back/R.png"));
 }
 
-fn start_game(
-    mut commands: Commands,
-    assets: Res<CardAssets>,
-    window: Single<&Window, With<PrimaryWindow>>,
-) {
-    let mut deck = assets.primary.keys().cloned().collect::<Vec<_>>();
-    let mut game_info = GameInfo {
-        dealer: 3,
-        ..Default::default()
-    };
+fn start_game(mut commands: Commands, mut game_info: ResMut<GameInfo>) {
+    game_info.dealer = 3;
+    game_info.h_penalty = 200;
 
     for name in ["lela", "ilia", "lizi", "giorgi"] {
         game_info.players.push_back(Player {
@@ -134,6 +67,20 @@ fn start_game(
             ..Default::default()
         });
     }
+
+    commands.spawn((Text::new("Scores:"), ScoresText));
+    commands.spawn((Visibility::Visible, Transform::default(), PlacedCardsNode));
+
+    commands.run_system_cached(start_round);
+}
+
+fn start_round(
+    mut commands: Commands,
+    mut game_info: ResMut<GameInfo>,
+    assets: Res<CardAssets>,
+    window: Single<&Window, With<PrimaryWindow>>,
+) {
+    let mut deck = assets.primary.keys().cloned().collect::<Vec<_>>();
 
     let current_player = "giorgi";
     while game_info.players[0].name != current_player {
@@ -143,19 +90,28 @@ fn start_game(
 
     game_info.trump = Some(Card::from_string(deck[random!(..deck.len())].clone(), usize::MAX).suit);
 
+    let _type = game_info._type;
+    let round = game_info.round;
+    let trump = game_info.trump;
+
     for (i, player) in game_info.players.iter_mut().enumerate() {
-        for _ in 0..9 {
+        for _ in if matches!(_type, GameType::Nines) {
+            0..9
+        } else if (0..8).contains(&round) {
+            0..round + 1
+        } else if (12..20).contains(&round) {
+            0..(8 - (round - 12)) + 1
+        } else {
+            0..9
+        } {
             let card = deck.remove(random!(..deck.len()));
             player.cards.push(Card::from_string(card, i));
         }
         player
             .cards
-            .sort_by_key(|x| std::cmp::Reverse(x.value(game_info.trump)));
+            .sort_by_key(|x| std::cmp::Reverse(x.value(trump)));
         player.cards.sort_by_key(|x| x.suit);
     }
-
-    commands.spawn((Text::new("Scores:"), ScoresText));
-    commands.spawn((Visibility::Visible, Transform::default(), PlacedCardsNode));
 
     for (i, player) in game_info.players.iter().enumerate() {
         let player_node = commands
@@ -184,7 +140,7 @@ fn start_game(
                         assets.primary[&card.as_string()].clone()
                     }),
                     Transform::from_xyz(
-                        (j as f32 - (9.0 - 1.0) / 2.0) * CSW,
+                        (j as f32 - (player.cards.len() as f32 - 1.0) / 2.0) * CSW,
                         if i % 2 == 0 {
                             (-window.height() + CSH + 25.0) / 2.0
                         } else {
@@ -288,12 +244,10 @@ fn start_game(
                 );
         }
     }
-    commands.insert_resource(game_info);
 }
 
 fn cleanup(
     mut commands: Commands,
-    mut game_info: ResMut<GameInfo>,
     player_nodes: Query<Entity, With<PlayerNode>>,
     placed_cards_node: Query<Entity, With<PlacedCardsNode>>,
     scores_text: Single<Entity, With<ScoresText>>,
@@ -306,9 +260,7 @@ fn cleanup(
     }
     commands.entity(*scores_text).despawn();
 
-    game_info.cards_placed.clear();
-    // TODO - TEMP
-    game_info.players.clear();
+    commands.insert_resource(GameInfo::default());
 }
 
 fn award_scores(
@@ -323,36 +275,55 @@ fn award_scores(
         cards.sort_by_key(|card| std::cmp::Reverse(card.value(game_info.trump)));
         let player = &mut game_info.players[cards[0].player];
         player.taken += 1;
-        game_info.last_took = Some(player.name.clone());
+        game_info.last_took = Some(cards[0].player);
         game_info.last_cards_placed = game_info.cards_placed.clone();
         for entity in query {
             commands.entity(entity).despawn();
         }
         game_info.cards_placed.clear();
     }
+
     // round over
     if !game_info.players.is_empty() && cards_in_hand.is_empty() {
-        let mut text = String::new();
+        let h_penalty = game_info.h_penalty;
         for player in game_info.players.iter_mut() {
             if player.taken == player.called {
                 player.score += (1 + player.taken) * 50
-            } else if player.taken > 0 {
-                player.score += player.taken * 10
+            } else if player.taken == 0 {
+                player.score -= h_penalty;
             } else {
-                player.score -= H_PENALTY;
+                player.score += player.taken * 10
             }
-            text.push_str(&format!(
-                "{}, {}/{} | {}\n",
+            player.taken = 0;
+            player.called = 0;
+            println!(
+                "{}, {}/{} | {}",
                 player.name, player.taken, player.called, player.score
-            ));
+            );
         }
-        scores_text.0 = text;
-        // TODO - TEMP
-        commands.run_system_cached(cleanup);
-        commands.run_system_cached(start_game);
+        game_info.round += 1;
+
+        // game over
+        if game_info.round
+            == match game_info._type {
+                GameType::Classic => 24,
+                GameType::Nines => 16,
+            }
+        {
+            // TODO - game over screen, show scores
+            commands.run_system_cached(cleanup);
+            commands.run_system_cached(start_game);
+        } else {
+            commands.run_system_cached(start_round);
+        }
     }
+
     // TODO - TEMP
-    scores_text.0 = format!("Trump: {:?}", game_info.trump.unwrap_or(Suit::Joker(false)));
+    scores_text.0 = format!(
+        "Round: {}\nTrump: {:?}",
+        game_info.round,
+        game_info.trump.unwrap_or(Suit::Joker(false))
+    );
 }
 
 #[allow(clippy::type_complexity)]
@@ -400,13 +371,19 @@ fn update_nametags(
             .enumerate()
             .find(|(_, player)| player.name == name.0)
             .unwrap();
-        text.0 = format!("{}\n{}/{}", name.0, player.taken, player.called);
+        text.0 = format!(
+            "{}\n{}/{}\n{:.2}",
+            name.0,
+            player.taken,
+            player.called,
+            player.score as f32 / 100.0
+        );
         transform.translation.y = if i % 2 == 0 {
-            (-window.height() + CSH) / 2.0 + CSH
+            (-window.height() + CSH + text.lines().count() as f32 * HALF_FONT_HEIGHT) / 2.0 + CSH
         } else {
             (-window.width()
                 + CSW
-                + text.lines().map(|line| line.len()).max().unwrap() as f32 * 20.0 * 1.2 * 0.5)
+                + text.lines().map(|line| line.len()).max().unwrap() as f32 * HALF_FONT_HEIGHT)
                 / 2.0
                 + CSW
         }
