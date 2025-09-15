@@ -301,7 +301,10 @@ fn award_scores(
                 player.name, player.taken, player.called, player.score
             );
         }
+        game_info.dealer = (game_info.dealer + 1) % 4;
         game_info.round += 1;
+        game_info.last_took = None;
+        game_info.last_cards_placed.clear();
 
         // game over
         if game_info.round
@@ -372,8 +375,9 @@ fn update_nametags(
             .find(|(_, player)| player.name == name.0)
             .unwrap();
         text.0 = format!(
-            "{}\n{}/{}\n{:.2}",
+            "{}{}\n{}/{}\n{:.2}",
             name.0,
+            if i == game_info.dealer { " (D)" } else { "" },
             player.taken,
             player.called,
             player.score as f32 / 100.0
