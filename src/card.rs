@@ -23,7 +23,7 @@ pub enum Rank {
     Queen,
     King,
     Ace,
-    Joker,
+    Joker = u8::MAX,
 }
 
 #[derive(Component, Clone, Copy, PartialEq, Debug)]
@@ -118,7 +118,7 @@ impl Card {
                 return false;
             }
         } else if let Some(x) = &game_info.last_took {
-            if *x != player.name {
+            if x != &player.name {
                 return false;
             }
         } else if player.name != game_info.players[(game_info.dealer + 1) % 4].name {
@@ -148,12 +148,12 @@ impl Card {
             }
 
             if player.cards.iter().any(|card| card.suit == first_suit)
-                && !matches!(first_suit, Suit::Joker(_))
-                && !matches!(card_suit, Suit::Joker(_))
                 && card_suit != first_suit
+                && !(matches!(first_suit, Suit::Joker(_)) || matches!(card_suit, Suit::Joker(_)))
             {
                 return false;
             }
+
             // TODO: don't place other cards if the player has a trump
         }
 

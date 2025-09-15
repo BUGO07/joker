@@ -31,12 +31,19 @@ fn main() {
                 .run_if(input_just_pressed(KeyCode::Space)),
         )
         .add_systems(Update, award_scores)
+        .add_systems(
+            Update,
+            (card_highlight, update_nametags).run_if(resource_changed::<GameInfo>),
+        )
         .add_systems(Update, resize_event)
         .run();
 }
 
 #[derive(Resource, Default)]
-pub struct CardAssets(HashMap<String, Handle<Image>>);
+pub struct CardAssets {
+    primary: HashMap<String, Handle<Image>>,
+    extra: HashMap<String, Handle<Image>>,
+}
 
 #[derive(Default, Debug)]
 pub struct Player {
@@ -77,6 +84,9 @@ pub struct PlacedCard;
 #[derive(Component)]
 pub struct ScoresText;
 
+#[derive(Component)]
+pub struct PlayerTag(String);
+
 const H_PENALTY: i32 = 200;
 
 const CARD_WIDTH: f32 = 290.0;
@@ -97,20 +107,22 @@ fn load_assets(
 ) {
     commands.spawn(Camera2d);
     for name in ASSETS.iter() {
-        assets.0.insert(
+        assets.primary.insert(
             name.to_string(),
             asset_server.load(format!("cards/{}.png", name)),
         );
     }
+    assets
+        .extra
+        .insert("back".to_string(), asset_server.load("back/R.png"));
 }
 
 fn start_game(
     mut commands: Commands,
     assets: Res<CardAssets>,
     window: Single<&Window, With<PrimaryWindow>>,
-    asset_server: Res<AssetServer>,
 ) {
-    let mut deck = assets.0.keys().cloned().collect::<Vec<_>>();
+    let mut deck = assets.primary.keys().cloned().collect::<Vec<_>>();
     let mut game_info = GameInfo {
         dealer: 3,
         ..Default::default()
@@ -141,7 +153,6 @@ fn start_game(
             .sort_by_key(|x| std::cmp::Reverse(x.value(game_info.trump)));
         player.cards.sort_by_key(|x| x.suit);
     }
-    // let covered_card = asset_server.load("back/Red.png");
 
     commands.spawn((Text::new("Scores:"), ScoresText));
     commands.spawn((Visibility::Visible, Transform::default(), PlacedCardsNode));
@@ -156,18 +167,9 @@ fn start_game(
             .id();
         commands.spawn((
             Text2d::new(&player.name),
-            Transform::from_xyz(
-                0.0,
-                // ahh
-                if i % 2 == 0 {
-                    (-window.height() + CSH) / 2.0 + CSH
-                } else {
-                    (-window.width() + CSW + player.name.len() as f32 * 20.0 * 1.2 * 0.5) / 2.0
-                        + CSW
-                },
-                0.0,
-            )
-            .with_rotation(Quat::from_rotation_z(i as f32 * 90f32.to_radians())),
+            TextLayout::new_with_justify(JustifyText::Center),
+            PlayerTag(player.name.clone()),
+            Transform::from_rotation(Quat::from_rotation_z(i as f32 * 90f32.to_radians())),
             ChildOf(player_node),
         ));
 
@@ -176,10 +178,10 @@ fn start_game(
                 .spawn((
                     Pickable::default(),
                     Sprite::from_image(if player.name == current_player {
-                        assets.0[&card.as_string()].clone()
+                        assets.primary[&card.as_string()].clone()
                     } else {
-                        // covered_card.clone()
-                        assets.0[&card.as_string()].clone()
+                        // assets.extra["back"].clone()
+                        assets.primary[&card.as_string()].clone()
                     }),
                     Transform::from_xyz(
                         (j as f32 - (9.0 - 1.0) / 2.0) * CSW,
@@ -204,10 +206,10 @@ fn start_game(
                             return;
                         }
 
-                        if card.player == 0 {
-                            transform.translation.y += 7.5;
-                            transform.scale.y *= 1.2;
-                        }
+                        // if card.player == 0 {
+                        transform.translation.y += 7.5;
+                        transform.scale.y *= 1.2;
+                        // }
                     },
                 )
                 .observe(
@@ -220,10 +222,10 @@ fn start_game(
                             return;
                         }
 
-                        if card.player == 0 {
-                            transform.translation.y -= 7.5;
-                            transform.scale.y /= 1.2;
-                        }
+                        // if card.player == 0 {
+                        transform.translation.y -= 7.5;
+                        transform.scale.y /= 1.2;
+                        // }
                     },
                 )
                 .observe(
@@ -253,7 +255,7 @@ fn start_game(
                             commands.entity(trigger.target).despawn();
                             let fc = cards_placed.back().unwrap();
                             commands.spawn((
-                                Sprite::from_image(assets.0[&card.as_string()].clone()),
+                                Sprite::from_image(assets.primary[&card.as_string()].clone()),
                                 Transform::from_translation(
                                     match (cards_placed.len() - 1 + fc.player) % 4 {
                                         0 => Vec3::NEG_Y,
@@ -354,11 +356,25 @@ fn award_scores(
 }
 
 #[allow(clippy::type_complexity)]
-fn resize_event(
-    mut cards: Query<(&mut Transform, &Card), (Without<Text2d>, Without<PlacedCard>)>,
-    mut player_nametags: Query<(&mut Transform, &Text2d)>,
-    mut resize_event: EventReader<WindowResized>,
+fn card_highlight(
+    mut cards: Query<(&mut Sprite, &Card), Without<PlacedCard>>,
     game_info: Res<GameInfo>,
+) {
+    for (mut sprite, card) in cards.iter_mut() {
+        // if card.player == 0 {
+        sprite.color = if card.can_place(&game_info) {
+            Color::srgb(1.0, 1.0, 1.0)
+        } else {
+            Color::srgb(0.5, 0.5, 0.5)
+        }
+        // }
+    }
+}
+
+fn resize_event(
+    mut commands: Commands,
+    mut cards: Query<(&mut Transform, &Card), Without<PlacedCard>>,
+    mut resize_event: EventReader<WindowResized>,
 ) {
     for event in resize_event.read() {
         for (mut transform, card) in cards.iter_mut() {
@@ -368,19 +384,31 @@ fn resize_event(
                 (-event.width + CSW + 25.0) / 2.0
             };
         }
-        for (mut transform, text) in player_nametags.iter_mut() {
-            let i = game_info
-                .players
-                .iter()
-                .enumerate()
-                .find(|(_, player)| player.name == text.0)
-                .unwrap()
-                .0;
-            transform.translation.y = if i % 2 == 0 {
-                (-event.height + CSH) / 2.0 + CSH
-            } else {
-                (-event.width + CSW + text.len() as f32 * 20.0 * 1.2 * 0.5) / 2.0 + CSW
-            }
+        commands.run_system_cached(update_nametags);
+    }
+}
+
+fn update_nametags(
+    mut player_nametags: Query<(&mut Transform, &mut Text2d, &PlayerTag), Without<Card>>,
+    game_info: Res<GameInfo>,
+    window: Single<&Window, With<PrimaryWindow>>,
+) {
+    for (mut transform, mut text, name) in player_nametags.iter_mut() {
+        let (i, player) = game_info
+            .players
+            .iter()
+            .enumerate()
+            .find(|(_, player)| player.name == name.0)
+            .unwrap();
+        text.0 = format!("{}\n{}/{}", name.0, player.taken, player.called);
+        transform.translation.y = if i % 2 == 0 {
+            (-window.height() + CSH) / 2.0 + CSH
+        } else {
+            (-window.width()
+                + CSW
+                + text.lines().map(|line| line.len()).max().unwrap() as f32 * 20.0 * 1.2 * 0.5)
+                / 2.0
+                + CSW
         }
     }
 }
