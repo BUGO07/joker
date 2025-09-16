@@ -1,15 +1,16 @@
 # Got bored again and decided to make Joker (the card game)
 
 ## Features
-- Card placing logic
-- Nines mode
+- Card logic
 - Calling / Taking
+- Rounds system
+- Nines mode
+- Classic mode
 - H Penalties
 
 ## TODO
-- Classic mode
-- Trumps
-- Nice UI / Animations
+- Bonuses
+- Nicer UI / Animations
 - Networking
 
 ## Building and running
