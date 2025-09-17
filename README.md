@@ -1,4 +1,4 @@
-# Got bored again and decided to make Joker (the card game)
+# Got bored again, decided to make Joker (the card game)
 
 ## Features
 - Card logic
