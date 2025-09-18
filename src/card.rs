@@ -145,17 +145,39 @@ impl Card {
                 return false;
             }
 
-            if game_info.players[self.player]
-                .cards
-                .iter()
-                .any(|card| card.suit == first_suit)
+            /*
+                the first card or the card the player is trying to place
+                isn't a joker and they aren't the same suit
+            */
+            if !(matches!(first_suit, Suit::Joker(_)) || matches!(card_suit, Suit::Joker(_)))
                 && card_suit != first_suit
-                && !(matches!(first_suit, Suit::Joker(_)) || matches!(card_suit, Suit::Joker(_)))
             {
-                return false;
-            }
+                /*
+                   the player has a card with the same suit as the first card
+                   but is trying to place a different card
+                */
+                if game_info.players[self.player]
+                    .cards
+                    .iter()
+                    .any(|card| card.suit == first_suit)
+                {
+                    return false;
+                }
 
-            // TODO: don't place other cards if the player has a trump
+                /*
+                    the player has a trump card
+                    but is trying to place a different card
+                */
+                if let Some(trump) = game_info.trump
+                    && card_suit != trump
+                    && game_info.players[self.player]
+                        .cards
+                        .iter()
+                        .any(|card| card.suit == trump)
+                {
+                    return false;
+                }
+            }
         }
 
         true
